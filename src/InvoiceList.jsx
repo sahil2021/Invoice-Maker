@@ -144,7 +144,7 @@ export default function InvoiceList({ refresh }) {
 
               <div className="right" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 {/* ✅ Download JSON */}
-                <button
+                {/* <button
                   className="btn btnGhost btnSmall"
                   type="button"
                   onClick={() =>
@@ -152,7 +152,7 @@ export default function InvoiceList({ refresh }) {
                   }
                 >
                   JSON
-                </button>
+                </button> */}
 
                 {/* OPTIONAL: PDF download from JSON */}
                 {

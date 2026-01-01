@@ -1,22 +1,35 @@
 
 import { useMemo, useState } from "react";
-import { generateInvoicePDF } from "./pdf";
+import { generateInvoicePDF } from "./pdf"; // ✅ add this back
 import "./InvoiceForm.css";
 
 const EMPTY_ITEM = { description: "", quantity: 1, kg: 0, price: 0 };
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export default function InvoiceForm({ onSaved }) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const [items, setItems] = useState([EMPTY_ITEM]);
+  const [items, setItems] = useState([{ ...EMPTY_ITEM }]);
 
   const addItem = () => {
     setItems((prev) => [...prev, { ...EMPTY_ITEM }]);
   };
 
   const removeItem = (index) => {
-    setItems((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)));
+    setItems((prev) =>
+      prev.length === 1 ? prev : prev.filter((_, i) => i !== index)
+    );
   };
 
   const updateItem = (index, key, value) => {
@@ -27,7 +40,6 @@ export default function InvoiceForm({ onSaved }) {
     });
   };
 
-  // ✅ Clean items once, used both for UI totals + submit
   const cleanedItems = useMemo(() => {
     return items
       .map((it) => ({
@@ -36,105 +48,89 @@ export default function InvoiceForm({ onSaved }) {
         kg: Number(it.kg) || 0,
         price: Number(it.price) || 0
       }))
-      // Only include rows that are actually valid for invoice
       .filter((it) => it.description && it.quantity > 0);
   }, [items]);
 
-  // ✅ Grand total matches cleanedItems (so UI == PDF == saved data)
   const grandTotal = useMemo(() => {
     return cleanedItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
   }, [cleanedItems]);
 
-  
-    function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    // Cleanup
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setIsSaving(true);
+
+    const form = e.target;
+    const id = form.id.value.trim();
+    const client = form.client.value.trim();
+    const date = form.date.value;
+
+    if (!id || !client || !date) {
+      setError("Please fill Invoice ID, Client Name and Date.");
+      setIsSaving(false);
+      return;
     }
 
-
-  
-async function handleSubmit(e) {
-  e.preventDefault();
-  setError("");
-  setIsSaving(true);
-
-  const form = e.target;
-
-  const id = form.id.value.trim();
-  const client = form.client.value.trim();
-  const date = form.date.value;
-
-  if (!id || !client || !date) {
-    setError("Please fill Invoice ID, Client Name and Date.");
-    setIsSaving(false);
-    return;
-  }
-
-  if (cleanedItems.length === 0) {
-    setError("Please add at least one valid line item (description + quantity).");
-    setIsSaving(false);
-    return;
-  }
-
-  const invoice = {
-    id,
-    client,
-    date,
-    items: cleanedItems,
-    amount: grandTotal.toFixed(2)
-  };
-
-  try {
-    const pdfBlob = generateInvoicePDF(invoice);
-    const fileName = `invoice-${invoice.id || "new"}.pdf`;
-    
-    downloadBlob(pdfBlob, fileName);
-
-    const body = new FormData();
-    body.append("invoice", JSON.stringify(invoice));
-    body.append("pdf", pdfBlob, fileName);
-
-    const res = await fetch("/.netlify/functions/saveInvoice", {
-      method: "POST",
-      body
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(text || `Save failed: ${res.status}`);
+    if (cleanedItems.length === 0) {
+      setError("Please add at least one valid line item (description + quantity).");
+      setIsSaving(false);
+      return;
     }
 
-    onSaved?.();
-    form.reset();
-    setItems([{ ...EMPTY_ITEM }]);
-  } catch (err) {
-    console.error(err);
-    setError("Something went wrong while saving. Please try again.");
-  } finally {
-    setIsSaving(false);
-  }
-}
+    const invoice = {
+      id,
+      client,
+      date,
+      items: cleanedItems,
+      amount: grandTotal.toFixed(2)
+    };
 
+    // ✅ 1) Generate + download PDF FIRST (even if saving fails)
+    try {
+      const pdfBlob = generateInvoicePDF(invoice);
+      const fileName = `invoice-${invoice.id || "new"}.pdf`;
+      downloadBlob(pdfBlob, fileName);
+    } catch (pdfErr) {
+      console.error(pdfErr);
+      setError("PDF generation failed. Please check pdf.js setup (jspdf-autotable).");
+      setIsSaving(false);
+      return; // stop here because user requested PDF on submit
+    }
+
+    // ✅ 2) Then try saving JSON to Netlify (can fail; PDF already downloaded)
+    try {
+      const res = await fetch("/.netlify/functions/saveInvoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invoice)
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Save failed: ${res.status}`);
+      }
+
+      onSaved?.();
+      form.reset();
+      setItems([{ ...EMPTY_ITEM }]);
+    } catch (err) {
+      console.error(err);
+      setError("PDF downloaded ✅ but saving failed ❌. Please try again.");
+      // Do NOT reset form so user can retry saving
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <form className="invForm" onSubmit={handleSubmit}>
       <div className="invFormHeader">
         <div>
           <h3 className="invFormTitle">Invoice Details</h3>
-          <p className="invFormSub">
-            Add client info + items — PDF will be generated instantly.
-          </p>
         </div>
 
         <div className="invFormBadge" aria-hidden="true">
-          PDF Ready
+          Saved to Netlify
         </div>
       </div>
 
@@ -188,7 +184,6 @@ async function handleSubmit(e) {
           <small className="hint">Pick the invoice issue date.</small>
         </div>
 
-        {/* Total display (read-only) */}
         <div className="field">
           <label>Grand Total</label>
           <div className="totalBox">
@@ -205,6 +200,7 @@ async function handleSubmit(e) {
             <h4 className="itemsTitle">Line Items</h4>
             <p className="itemsSub">Add description, quantity, kg and price.</p>
           </div>
+
           <button
             type="button"
             className="btn btnGhost"
@@ -270,7 +266,9 @@ async function handleSubmit(e) {
                   disabled={isSaving}
                 />
 
-                <div className="lineTotal">₹{Number.isFinite(lineTotal) ? lineTotal.toFixed(2) : "0.00"}</div>
+                <div className="lineTotal">
+                  ₹{Number.isFinite(lineTotal) ? lineTotal.toFixed(2) : "0.00"}
+                </div>
 
                 <button
                   type="button"
@@ -305,10 +303,10 @@ async function handleSubmit(e) {
         <button type="submit" className="btn btnPrimary" disabled={isSaving}>
           {isSaving ? (
             <>
-              <span className="spinner" aria-hidden="true" /> Creating...
+              <span className="spinner" aria-hidden="true" /> Saving...
             </>
           ) : (
-            "Create Invoice"
+            "Save Invoice"
           )}
         </button>
       </div>

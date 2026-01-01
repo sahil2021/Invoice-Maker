@@ -261,7 +261,7 @@ label{
 .right{ text-align:right; }
 
 .lineTotal{
-  text-align:right;
+  text-align:center!important;
   font-weight: 900;
   color: var(--text);
 }

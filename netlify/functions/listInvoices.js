@@ -1,18 +1,12 @@
 
-import { getStore } from "@netlify/blobs";
+const { getStore } = require("@netlify/blobs");
 
-export async function handler() {
+exports.handler = async () => {
   try {
-    const store = getStore("invoices");
+    const store = getStore("invoices"); //[1](https://docs.netlify.com/build/data-and-storage/netlify-blobs/)
 
-    let invoices = [];
-    try {
-      const raw = await store.get("index.json");
-      invoices = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(invoices)) invoices = [];
-    } catch {
-      invoices = [];
-    }
+    const index = await store.get("index.json", { type: "json" }); // get supports json type [1](https://docs.netlify.com/build/data-and-storage/netlify-blobs/)
+    const invoices = Array.isArray(index) ? index : [];
 
     return {
       statusCode: 200,
@@ -20,6 +14,7 @@ export async function handler() {
       body: JSON.stringify(invoices)
     };
   } catch (err) {
+    console.error("listInvoices error:", err);
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
-}
+};
