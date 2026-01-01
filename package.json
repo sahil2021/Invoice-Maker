@@ -10,7 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "busboy": "^1.6.0",
+    "easyinvoice": "^3.0.47",
     "jspdf": "^3.0.4",
+    "jspdf-autotable": "^5.0.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

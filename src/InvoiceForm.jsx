@@ -1,59 +1,136 @@
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { generateInvoicePDF } from "./pdf";
 import "./InvoiceForm.css";
+
+const EMPTY_ITEM = { description: "", quantity: 1, kg: 0, price: 0 };
 
 export default function InvoiceForm({ onSaved }) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    setIsSaving(true);
+  const [items, setItems] = useState([EMPTY_ITEM]);
 
-    const form = e.target;
+  const addItem = () => {
+    setItems((prev) => [...prev, { ...EMPTY_ITEM }]);
+  };
 
-    const invoice = {
-      id: form.id.value.trim(),
-      client: form.client.value.trim(),
-      amount: form.amount.value,
-      date: form.date.value
-    };
+  const removeItem = (index) => {
+    setItems((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)));
+  };
 
-    try {
-      const pdfBlob = generateInvoicePDF(invoice);
+  const updateItem = (index, key, value) => {
+    setItems((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [key]: value };
+      return next;
+    });
+  };
 
-      const body = new FormData();
-      body.append("invoice", JSON.stringify(invoice));
-      // Optional filename helps some backends; harmless even if ignored:
-      body.append("pdf", pdfBlob, `invoice-${invoice.id || "new"}.pdf`);
+  // ✅ Clean items once, used both for UI totals + submit
+  const cleanedItems = useMemo(() => {
+    return items
+      .map((it) => ({
+        description: String(it.description || "").trim(),
+        quantity: Number(it.quantity) || 0,
+        kg: Number(it.kg) || 0,
+        price: Number(it.price) || 0
+      }))
+      // Only include rows that are actually valid for invoice
+      .filter((it) => it.description && it.quantity > 0);
+  }, [items]);
 
-      const res = await fetch("/.netlify/functions/saveInvoice", {
-        method: "POST",
-        body
-      });
+  // ✅ Grand total matches cleanedItems (so UI == PDF == saved data)
+  const grandTotal = useMemo(() => {
+    return cleanedItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
+  }, [cleanedItems]);
 
-      if (!res.ok) {
-        throw new Error(`Save failed: ${res.status}`);
-      }
-
-      onSaved?.();
-      form.reset();
-    } catch (err) {
-      setError("Something went wrong while saving. Please try again.");
-      console.error(err);
-    } finally {
-      setIsSaving(false);
+  
+    function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Cleanup
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
+
+
+  
+async function handleSubmit(e) {
+  e.preventDefault();
+  setError("");
+  setIsSaving(true);
+
+  const form = e.target;
+
+  const id = form.id.value.trim();
+  const client = form.client.value.trim();
+  const date = form.date.value;
+
+  if (!id || !client || !date) {
+    setError("Please fill Invoice ID, Client Name and Date.");
+    setIsSaving(false);
+    return;
   }
+
+  if (cleanedItems.length === 0) {
+    setError("Please add at least one valid line item (description + quantity).");
+    setIsSaving(false);
+    return;
+  }
+
+  const invoice = {
+    id,
+    client,
+    date,
+    items: cleanedItems,
+    amount: grandTotal.toFixed(2)
+  };
+
+  try {
+    const pdfBlob = generateInvoicePDF(invoice);
+    const fileName = `invoice-${invoice.id || "new"}.pdf`;
+    
+    downloadBlob(pdfBlob, fileName);
+
+    const body = new FormData();
+    body.append("invoice", JSON.stringify(invoice));
+    body.append("pdf", pdfBlob, fileName);
+
+    const res = await fetch("/.netlify/functions/saveInvoice", {
+      method: "POST",
+      body
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `Save failed: ${res.status}`);
+    }
+
+    onSaved?.();
+    form.reset();
+    setItems([{ ...EMPTY_ITEM }]);
+  } catch (err) {
+    console.error(err);
+    setError("Something went wrong while saving. Please try again.");
+  } finally {
+    setIsSaving(false);
+  }
+}
+
 
   return (
     <form className="invForm" onSubmit={handleSubmit}>
       <div className="invFormHeader">
         <div>
           <h3 className="invFormTitle">Invoice Details</h3>
-          <p className="invFormSub">Fill in basic invoice info and create a PDF instantly.</p>
+          <p className="invFormSub">
+            Add client info + items — PDF will be generated instantly.
+          </p>
         </div>
 
         <div className="invFormBadge" aria-hidden="true">
@@ -68,6 +145,7 @@ export default function InvoiceForm({ onSaved }) {
         </div>
       )}
 
+      {/* Basic details */}
       <div className="invGrid">
         <div className="field">
           <label htmlFor="id">Invoice ID</label>
@@ -78,6 +156,7 @@ export default function InvoiceForm({ onSaved }) {
             placeholder="e.g. INV-0012"
             required
             autoComplete="off"
+            disabled={isSaving}
           />
           <small className="hint">Use a unique ID for tracking.</small>
         </div>
@@ -91,39 +170,134 @@ export default function InvoiceForm({ onSaved }) {
             placeholder="e.g. Acme Pvt Ltd"
             required
             autoComplete="organization"
+            disabled={isSaving}
           />
           <small className="hint">Customer / company being billed.</small>
         </div>
 
         <div className="field">
-          <label htmlFor="amount">Amount</label>
+          <label htmlFor="date">Invoice Date</label>
           <input
-            id="amount"
-            name="amount"
+            id="date"
+            name="date"
             className="input"
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="e.g. 25000"
+            type="date"
             required
-            inputMode="decimal"
+            disabled={isSaving}
           />
-          <small className="hint">Enter numeric value (e.g. 1250.50)</small>
+          <small className="hint">Pick the invoice issue date.</small>
         </div>
 
+        {/* Total display (read-only) */}
         <div className="field">
-          <label htmlFor="date">Invoice Date</label>
-          <input id="date" name="date" className="input" type="date" required />
-          <small className="hint">Pick the invoice issue date.</small>
+          <label>Grand Total</label>
+          <div className="totalBox">
+            <span className="totalValue">₹{grandTotal.toFixed(2)}</span>
+            <span className="totalHint">Auto-calculated from valid items</span>
+          </div>
         </div>
       </div>
 
+      {/* Line items */}
+      <div className="itemsSection">
+        <div className="itemsHeader">
+          <div>
+            <h4 className="itemsTitle">Line Items</h4>
+            <p className="itemsSub">Add description, quantity, kg and price.</p>
+          </div>
+          <button
+            type="button"
+            className="btn btnGhost"
+            onClick={addItem}
+            disabled={isSaving}
+          >
+            + Add Item
+          </button>
+        </div>
+
+        <div className="itemsTable">
+          <div className="itemsHead">
+            <span>Description</span>
+            <span className="right">Qty</span>
+            <span className="right">KG</span>
+            <span className="right">Price</span>
+            <span className="right">Total</span>
+            <span />
+          </div>
+
+          {items.map((it, idx) => {
+            const qty = Number(it.quantity) || 0;
+            const price = Number(it.price) || 0;
+            const lineTotal = qty * price;
+
+            return (
+              <div className="itemsRow" key={idx}>
+                <input
+                  className="input"
+                  placeholder="e.g. Transport Service"
+                  value={it.description}
+                  onChange={(e) => updateItem(idx, "description", e.target.value)}
+                  disabled={isSaving}
+                />
+
+                <input
+                  className="input"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={it.quantity}
+                  onChange={(e) => updateItem(idx, "quantity", e.target.value)}
+                  disabled={isSaving}
+                />
+
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={it.kg}
+                  onChange={(e) => updateItem(idx, "kg", e.target.value)}
+                  disabled={isSaving}
+                />
+
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={it.price}
+                  onChange={(e) => updateItem(idx, "price", e.target.value)}
+                  disabled={isSaving}
+                />
+
+                <div className="lineTotal">₹{Number.isFinite(lineTotal) ? lineTotal.toFixed(2) : "0.00"}</div>
+
+                <button
+                  type="button"
+                  className="iconBtn"
+                  onClick={() => removeItem(idx)}
+                  disabled={items.length === 1 || isSaving}
+                  title="Remove item"
+                  aria-label="Remove item"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Actions */}
       <div className="invActions">
         <button
           type="reset"
           className="btn btnGhost"
           disabled={isSaving}
-          onClick={() => setError("")}
+          onClick={() => {
+            setError("");
+            setItems([{ ...EMPTY_ITEM }]);
+          }}
         >
           Clear
         </button>

@@ -1,6 +1,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import "./InvoiceList.css";
+// OPTIONAL: enable if you want PDF download from JSON
+import { generateInvoicePDF } from "./pdf";
+
+function downloadUrl(url) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 export default function InvoiceList({ refresh }) {
   const [q, setQ] = useState("");
@@ -25,17 +36,20 @@ export default function InvoiceList({ refresh }) {
     }
   }
 
-  useEffect(() => {
-    load();
-    // refresh triggers re-fetch from App after saving
-  }, [refresh]);
+  useEffect(() => { load(); }, [refresh]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    if (!query) return invoices;
+    const sorted = [...invoices].sort((a, b) => {
+      const da = a?.date ? new Date(a.date).getTime() : 0;
+      const db = b?.date ? new Date(b.date).getTime() : 0;
+      return db - da;
+    });
 
-    return invoices.filter((i) => {
-      const id = String(i?.id ?? "");
+    if (!query) return sorted;
+
+    return sorted.filter((i) => {
+      const id = String(i?.id ?? "").toLowerCase();
       const client = String(i?.client ?? "").toLowerCase();
       return id.includes(query) || client.includes(query);
     });
@@ -44,9 +58,24 @@ export default function InvoiceList({ refresh }) {
   const formatAmount = (amt) => {
     const n = Number(amt);
     if (Number.isNaN(n)) return amt ?? "";
-    // keep your "$" for now since your original UI uses it
-    return `$${n.toFixed(2)}`;
+    return `₹${n.toFixed(2)}`;
   };
+
+  // OPTIONAL: download PDF by fetching JSON and generating PDF client-side
+
+  async function downloadPdfFromJson(id) {
+    const res = await fetch(`/.netlify/functions/getInvoiceJson?id=${encodeURIComponent(id)}`);
+    const invoice = await res.json();
+    const blob = generateInvoicePDF(invoice);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `invoice-${id}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   return (
     <div className="invListWrap">
@@ -78,7 +107,6 @@ export default function InvoiceList({ refresh }) {
         </div>
       )}
 
-      {/* Loading state */}
       {loading && (
         <div className="skeletonList" aria-label="Loading invoices">
           <div className="skeletonRow" />
@@ -87,7 +115,6 @@ export default function InvoiceList({ refresh }) {
         </div>
       )}
 
-      {/* Empty state */}
       {!loading && !error && filtered.length === 0 && (
         <div className="emptyState">
           <div className="emptyIcon" aria-hidden="true">🧾</div>
@@ -96,74 +123,51 @@ export default function InvoiceList({ refresh }) {
         </div>
       )}
 
-      {/* Desktop table */}
       {!loading && filtered.length > 0 && (
-        <>
-          <div className="tableCard desktopOnly">
-            <div className="tableHead">
-              <span>Invoice ID</span>
-              <span>Client</span>
-              <span className="right">Amount</span>
-              <span>Date</span>
-              <span className="right">PDF</span>
+        <div className="tableCard">
+          <div className="tableHead">
+            <span>Invoice ID</span>
+            <span>Client</span>
+            <span className="right">Items</span>
+            <span className="right">Amount</span>
+            <span>Date</span>
+            <span className="right">Download</span>
+          </div>
+
+          {filtered.map((inv) => (
+            <div className="tableRow" key={inv.id}>
+              <div className="mono"><span className="idPill">{inv.id}</span></div>
+              <div className="clientName">{inv.client}</div>
+              <div className="right strong">{inv.itemsCount ?? "-"}</div>
+              <div className="right strong">{formatAmount(inv.amount)}</div>
+              <div className="muted">{inv.date || "-"}</div>
+
+              <div className="right" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                {/* ✅ Download JSON */}
+                <button
+                  className="btn btnGhost btnSmall"
+                  type="button"
+                  onClick={() =>
+                    downloadUrl(`/.netlify/functions/getInvoiceJson?id=${encodeURIComponent(inv.id)}`)
+                  }
+                >
+                  JSON
+                </button>
+
+                {/* OPTIONAL: PDF download from JSON */}
+                {
+                <button
+                  className="btn btnPrimary btnSmall"
+                  type="button"
+                  onClick={() => downloadPdfFromJson(inv.id)}
+                >
+                  PDF
+                </button>
+        }
+              </div>
             </div>
-
-            {filtered.map((inv) => (
-              <div className="tableRow" key={inv.id}>
-                <div className="mono">
-                  <span className="idPill">{inv.id}</span>
-                </div>
-
-                <div className="clientCell">
-                  <div className="clientName">{inv.client}</div>
-                </div>
-
-                <div className="right strong">{formatAmount(inv.amount)}</div>
-
-                <div className="muted">{inv.date || "-"}</div>
-
-                <div className="right">
-                  <a
-                    className="btn btnPrimary btnSmall"
-                    href={`/.netlify/functions/getInvoice?id=${encodeURIComponent(inv.id)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open PDF
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Mobile cards */}
-          <div className="mobileOnly cardGrid">
-            {filtered.map((inv) => (
-              <div className="invCard" key={inv.id}>
-                <div className="invCardTop">
-                  <span className="idPill mono">{inv.id}</span>
-                  <span className="amtPill">{formatAmount(inv.amount)}</span>
-                </div>
-
-                <div className="invCardBody">
-                  <div className="clientName">{inv.client}</div>
-                  <div className="muted">{inv.date || "-"}</div>
-                </div>
-
-                <div className="invCardActions">
-                  <a
-                    className="btn btnPrimary"
-                    href={`/.netlify/functions/getInvoice?id=${encodeURIComponent(inv.id)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open PDF
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+          ))}
+        </div>
       )}
     </div>
   );
