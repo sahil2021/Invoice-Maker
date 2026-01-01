@@ -137,54 +137,51 @@ export default function InvoiceList({ refresh }) {
         </div>
       )}
 
-      {!loading && filtered.length > 0 && (
-        <div className="tableCard compact">
-          <div className="tableHead compact">
+      
+    {!loading && filtered.length > 0 && (
+    <div className="tableCard compact scrollCard">
+        <div className="tableScroll">
+        <div className="tableHead compact stickyHead">
             <span>Invoice</span>
             <span>Client</span>
             <span className="right">Items</span>
             <span className="right">Amount</span>
-            <span>Date</span>
-            <span className="right">Download</span>
-          </div>
-
-          {filtered.map((inv) => (
-            <div className="tableRow compact" key={inv.id}>
-              <div className="mono">
-                <span className="idPill">{inv.id}</span>
-              </div>
-
-              <div className="clientName ellipsis" title={inv.client}>
-                {inv.client}
-              </div>
-
-              <div className="right strong">{inv.itemsCount ?? "-"}</div>
-
-              <div className="right strong">{formatAmount(inv.amount)}</div>
-
-              <div className="muted">{inv.date || "-"}</div>
-
-              <div className="actionsCell">
-                <button
-                  className="btn btnGhost btnSmall"
-                  type="button"
-                  onClick={() => downloadJson(inv.id)}
-                >
-                  JSON
-                </button>
-
-                <button
-                  className="btn btnPrimary btnSmall"
-                  type="button"
-                  onClick={() => downloadPdfFromJson(inv.id)}
-                >
-                  PDF
-                </button>
-              </div>
-            </div>
-          ))}
+            <span className="right">Date</span>
         </div>
-      )}
+
+        <div className="tableBody">
+            {filtered.map((inv) => (
+            <div className="tableRow compact" key={inv.id}>
+                <div className="mono">
+                <span className="idPill">{inv.id}</span>
+                </div>
+
+                <div className="clientName ellipsis" title={inv.client}>
+                {inv.client}
+                </div>
+
+                <div className="right strong">{inv.itemsCount ?? "-"}</div>
+
+                <div className="right strong">{formatAmount(inv.amount)}</div>
+
+                <div className="muted right">{inv.date || "-"}</div>
+
+                <div className="actionsCell">
+                <button
+                    className="btn btnPrimary btnSmall"
+                    type="button"
+                    onClick={() => downloadPdfFromJson(inv.id)}
+                >
+                    PDF
+                </button>
+                </div>
+            </div>
+            ))}
+        </div>
+        </div>
+    </div>
+    )}
+
     </div>
   );
 }

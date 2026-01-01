@@ -354,3 +354,45 @@
     min-width: 760px; /* enables horizontal scroll instead of breaking UI */
   }
 }
+
+
+
+/* Make the card scrollable (both axes) */
+.scrollCard {
+  overflow: hidden; /* keeps rounded corners clean */
+}
+
+.tableScroll {
+  max-height: 420px;       /* vertical scroll height - adjust */
+  overflow: auto;          /* enables vertical + horizontal scroll */
+  border-radius: 12px;
+}
+
+/* Sticky header inside scroll area */
+.stickyHead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;     /* same as head background */
+}
+
+/* Ensure table doesn’t squish too much and causes horizontal scroll on small screens */
+.tableHead,
+.tableRow {
+  min-width: 820px;        /* adjust based on your columns */
+}
+
+/* Optional: nicer scrollbar (works in Chrome/Edge) */
+.tableScroll::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.tableScroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.tableScroll::-webkit-scrollbar-track {
+  background: transparent;
+}
