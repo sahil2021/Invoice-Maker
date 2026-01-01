@@ -64,7 +64,7 @@ export default function InvoiceList({ refresh }) {
   // OPTIONAL: download PDF by fetching JSON and generating PDF client-side
 
   async function downloadPdfFromJson(id) {
-    const res = await fetch(`/.netlify/functions/getInvoiceJson?id=${encodeURIComponent(id)}`);
+    const res = await fetch(`/.netlify/functions/getInvoice?id=${encodeURIComponent(id)}`);
     const invoice = await res.json();
     const blob = generateInvoicePDF(invoice);
     const url = URL.createObjectURL(blob);
@@ -148,7 +148,7 @@ export default function InvoiceList({ refresh }) {
                   className="btn btnGhost btnSmall"
                   type="button"
                   onClick={() =>
-                    downloadUrl(`/.netlify/functions/getInvoiceJson?id=${encodeURIComponent(inv.id)}`)
+                    downloadUrl(`/.netlify/functions/getInvoice?id=${encodeURIComponent(inv.id)}`)
                   }
                 >
                   JSON

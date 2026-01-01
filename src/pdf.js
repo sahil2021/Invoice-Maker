@@ -36,8 +36,8 @@ export function generateInvoicePDF(invoice) {
       item.description || "",
       qty,
       kg,
-      `$${price.toFixed(2)}`,
-      `$${total.toFixed(2)}`
+      `₹${price.toFixed(2)}`,
+      `₹${total.toFixed(2)}`
     ];
   });
 
@@ -66,7 +66,7 @@ export function generateInvoicePDF(invoice) {
   const finalY = (doc.lastAutoTable?.finalY || 75) + 10;
 
   doc.setFontSize(12);
-  doc.text(`Grand Total: $${grandTotal.toFixed(2)}`, 140, finalY);
+  doc.text(`Grand Total: ₹${grandTotal.toFixed(2)}`, 140, finalY);
 
   return doc.output("blob");
 }
