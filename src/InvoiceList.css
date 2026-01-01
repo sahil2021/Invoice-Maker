@@ -353,6 +353,10 @@
   .tableHead, .tableRow{
     min-width: 760px; /* enables horizontal scroll instead of breaking UI */
   }
+  .tableCard.compact{
+    overflow-x: scroll;
+    width: 300px;
+  }
 }
 
 
