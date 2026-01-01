@@ -9,9 +9,9 @@ export function generateInvoicePDF(invoice) {
   doc.text("INVOICE", 14, 20);
 
   doc.setFontSize(10);
-  doc.text("Your Company Name", 14, 28);
-  doc.text("Address Line 1", 14, 34);
-  doc.text("Email: company@email.com", 14, 40);
+  doc.text("Trimurti Fabricators", 14, 28);
+  doc.text("Mankovli, Thane", 14, 34);
+  doc.text("Email: ravishete74@gmail.com", 14, 40);
 
   // Invoice info
   doc.text(`Invoice #: ${invoice.id}`, 140, 28);
@@ -36,8 +36,8 @@ export function generateInvoicePDF(invoice) {
       item.description || "",
       qty,
       kg,
-      `₹${price.toFixed(2)}`,
-      `₹${total.toFixed(2)}`
+      `Rs. ${price.toFixed(2)}`,
+      `Rs. ${total.toFixed(2)}`
     ];
   });
 
@@ -66,7 +66,7 @@ export function generateInvoicePDF(invoice) {
   const finalY = (doc.lastAutoTable?.finalY || 75) + 10;
 
   doc.setFontSize(12);
-  doc.text(`Grand Total: ₹${grandTotal.toFixed(2)}`, 140, finalY);
+  doc.text(`Grand Total: Rs. ${grandTotal.toFixed(2)}`, 140, finalY);
 
   return doc.output("blob");
 }

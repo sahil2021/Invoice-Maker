@@ -1,16 +1,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import "./InvoiceList.css";
-// OPTIONAL: enable if you want PDF download from JSON
 import { generateInvoicePDF } from "./pdf";
 
-function downloadUrl(url) {
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.target = "_blank";
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export default function InvoiceList({ refresh }) {
@@ -36,7 +37,9 @@ export default function InvoiceList({ refresh }) {
     }
   }
 
-  useEffect(() => { load(); }, [refresh]);
+  useEffect(() => {
+    load();
+  }, [refresh]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -61,42 +64,53 @@ export default function InvoiceList({ refresh }) {
     return `₹${n.toFixed(2)}`;
   };
 
-  // OPTIONAL: download PDF by fetching JSON and generating PDF client-side
+  async function downloadJson(id) {
+    // direct download from function
+    window.open(
+      `/.netlify/functions/getInvoice?id=${encodeURIComponent(id)}`,
+      "_blank"
+    );
+  }
 
   async function downloadPdfFromJson(id) {
-    const res = await fetch(`/.netlify/functions/getInvoice?id=${encodeURIComponent(id)}`);
-    const invoice = await res.json();
+    // ✅ Correct endpoint for JSON-only storage
+    const res = await fetch(
+      `/.netlify/functions/getInvoice?id=${encodeURIComponent(id)}`
+    );
+
+    if (!res.ok) throw new Error("Unable to fetch invoice JSON");
+
+    const invoice = await res.json(); // ✅ now it's JSON
     const blob = generateInvoicePDF(invoice);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `invoice-${id}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    downloadBlob(blob, `invoice-${id}.pdf`);
   }
 
   return (
     <div className="invListWrap">
-      <div className="invListTop">
-        <div className="searchBox">
+      <div className="invListTop compact">
+        <div className="searchBox compact">
           <span className="searchIcon" aria-hidden="true">🔎</span>
           <input
             className="searchInput"
-            placeholder="Search by Invoice ID or Client..."
+            placeholder="Search ID / Client..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
           {q && (
-            <button className="clearBtn" type="button" onClick={() => setQ("")} aria-label="Clear search">
+            <button
+              className="clearBtn"
+              type="button"
+              onClick={() => setQ("")}
+              aria-label="Clear search"
+            >
               ✕
             </button>
           )}
         </div>
 
-        <button className="btn btnGhost" type="button" onClick={load} disabled={loading}>
-          {loading ? "Refreshing..." : "Refresh"}
+        <button className="btn btnGhost btnSmall" type="button" onClick={load} disabled={loading}>
+          {loading ? "..." : "Refresh"}
         </button>
       </div>
 
@@ -124,9 +138,9 @@ export default function InvoiceList({ refresh }) {
       )}
 
       {!loading && filtered.length > 0 && (
-        <div className="tableCard">
-          <div className="tableHead">
-            <span>Invoice ID</span>
+        <div className="tableCard compact">
+          <div className="tableHead compact">
+            <span>Invoice</span>
             <span>Client</span>
             <span className="right">Items</span>
             <span className="right">Amount</span>
@@ -135,27 +149,30 @@ export default function InvoiceList({ refresh }) {
           </div>
 
           {filtered.map((inv) => (
-            <div className="tableRow" key={inv.id}>
-              <div className="mono"><span className="idPill">{inv.id}</span></div>
-              <div className="clientName">{inv.client}</div>
+            <div className="tableRow compact" key={inv.id}>
+              <div className="mono">
+                <span className="idPill">{inv.id}</span>
+              </div>
+
+              <div className="clientName ellipsis" title={inv.client}>
+                {inv.client}
+              </div>
+
               <div className="right strong">{inv.itemsCount ?? "-"}</div>
+
               <div className="right strong">{formatAmount(inv.amount)}</div>
+
               <div className="muted">{inv.date || "-"}</div>
 
-              <div className="right" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                {/* ✅ Download JSON */}
-                {/* <button
+              <div className="actionsCell">
+                <button
                   className="btn btnGhost btnSmall"
                   type="button"
-                  onClick={() =>
-                    downloadUrl(`/.netlify/functions/getInvoice?id=${encodeURIComponent(inv.id)}`)
-                  }
+                  onClick={() => downloadJson(inv.id)}
                 >
                   JSON
-                </button> */}
+                </button>
 
-                {/* OPTIONAL: PDF download from JSON */}
-                {
                 <button
                   className="btn btnPrimary btnSmall"
                   type="button"
@@ -163,7 +180,6 @@ export default function InvoiceList({ refresh }) {
                 >
                   PDF
                 </button>
-        }
               </div>
             </div>
           ))}

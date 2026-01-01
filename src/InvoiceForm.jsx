@@ -128,10 +128,6 @@ export default function InvoiceForm({ onSaved }) {
         <div>
           <h3 className="invFormTitle">Invoice Details</h3>
         </div>
-
-        <div className="invFormBadge" aria-hidden="true">
-          Saved to Netlify
-        </div>
       </div>
 
       {error && (
@@ -187,7 +183,7 @@ export default function InvoiceForm({ onSaved }) {
         <div className="field">
           <label>Grand Total</label>
           <div className="totalBox">
-            <span className="totalValue">₹{grandTotal.toFixed(2)}</span>
+            <span className="totalValue">Rs. {grandTotal.toFixed(2)}</span>
             <span className="totalHint">Auto-calculated from valid items</span>
           </div>
         </div>
@@ -267,7 +263,7 @@ export default function InvoiceForm({ onSaved }) {
                 />
 
                 <div className="lineTotal">
-                  ₹{Number.isFinite(lineTotal) ? lineTotal.toFixed(2) : "0.00"}
+                  Rs. {Number.isFinite(lineTotal) ? lineTotal.toFixed(2) : "0.00"}
                 </div>
 
                 <button
