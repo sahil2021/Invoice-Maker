@@ -1,20 +1,32 @@
 
-const { getStore } = require("@netlify/blobs");
+const { connectLambda, getStore } = require("@netlify/blobs");
 
-exports.handler = async () => {
+exports.handler = async (event) => {
   try {
-    const store = getStore("invoices"); //[1](https://docs.netlify.com/build/data-and-storage/netlify-blobs/)
+    // ✅ Required in Lambda compatibility mode
+    connectLambda(event); // must run before getStore() [1](https://www.npmjs.com/package/@netlify/blobs)
 
-    const index = await store.get("index.json", { type: "json" }); // get supports json type [1](https://docs.netlify.com/build/data-and-storage/netlify-blobs/)
-    const invoices = Array.isArray(index) ? index : [];
+    const store = getStore("invoices");
+
+    let invoices = [];
+    try {
+      const raw = await store.get("index.json", { type: "json" });
+      invoices = Array.isArray(raw) ? raw : [];
+    } catch {
+      invoices = [];
+    }
 
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(invoices)
+      body: JSON.stringify(invoices),
     };
   } catch (err) {
     console.error("listInvoices error:", err);
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    return {
+      statusCode: 500,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: err.message }),
+    };
   }
 };

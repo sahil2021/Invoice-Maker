@@ -1,5 +1,5 @@
 
-const { getStore } = require("@netlify/blobs");
+const { connectLambda, getStore } = require("@netlify/blobs");
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -7,7 +7,10 @@ exports.handler = async (event) => {
   }
 
   try {
-    const store = getStore("invoices"); // site-wide store [1](https://docs.netlify.com/build/data-and-storage/netlify-blobs/)
+    // ✅ Required in Lambda compatibility mode
+    connectLambda(event); // [1](https://www.npmjs.com/package/@netlify/blobs)
+
+    const store = getStore("invoices");
     const data = JSON.parse(event.body || "{}");
 
     const id = String(data.id || "").trim();
@@ -19,7 +22,6 @@ exports.handler = async (event) => {
       return { statusCode: 400, body: "Missing required fields: id, client, date" };
     }
 
-    // compute total if not provided
     const computed = items.reduce((sum, it) => {
       const qty = Number(it.quantity) || 0;
       const price = Number(it.price) || 0;
@@ -30,30 +32,28 @@ exports.handler = async (event) => {
     const itemsCount = items.length;
 
     // Save full invoice JSON
-    await store.setJSON(`data/${id}.json`, { ...data, id, client, date, items, amount }); // setJSON [1](https://docs.netlify.com/build/data-and-storage/netlify-blobs/)
+    await store.setJSON(`data/${id}.json`, { ...data, id, client, date, items, amount });
 
     // Update index.json
     let index = [];
     try {
-      const existing = await store.get("index.json", { type: "json" }); // get(... type: "json") [1](https://docs.netlify.com/build/data-and-storage/netlify-blobs/)
-      index = Array.isArray(existing) ? existing : [];
+      const raw = await store.get("index.json", { type: "json" });
+      index = Array.isArray(raw) ? raw : [];
     } catch {
       index = [];
     }
 
-    // de-dupe by id, then push
     index = index.filter((x) => x?.id !== id);
     index.push({ id, client, date, amount, itemsCount });
 
-    // newest first
     index.sort((a, b) => (new Date(b.date).getTime() || 0) - (new Date(a.date).getTime() || 0));
 
-    await store.setJSON("index.json", index); // overwrite index [1](https://docs.netlify.com/build/data-and-storage/netlify-blobs/)
+    await store.setJSON("index.json", index);
 
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ success: true, id })
+      body: JSON.stringify({ success: true, id }),
     };
   } catch (err) {
     console.error("saveInvoice error:", err);
