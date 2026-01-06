@@ -3,6 +3,26 @@ import { useEffect, useMemo, useState } from "react";
 import "./InvoiceList.css";
 import { generateInvoicePDF } from "./pdf";
 
+import companyLogoUrl from "./assets/company_logo.jpg";
+import ownerSignUrl from "./assets/owner_sign.jpg";
+
+
+async function urlToDataURL(url) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result); // data URL
+    reader.readAsDataURL(blob);
+  });
+}
+
+const [companyLogo, ownerSign] = await Promise.all([
+  urlToDataURL(companyLogoUrl),
+  urlToDataURL(ownerSignUrl),
+]);
+
+
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -37,10 +57,13 @@ export default function InvoiceList({ refresh }) {
     }
   }
 
-  useEffect(() => {
-    load();
-  }, [refresh]);
+  useEffect(() => { load(); }, [refresh]);
 
+  // -------------------------
+  // 🔍 Enhanced Smart Search 
+  // Now searches across:
+  // ID, Buyer Name, GST No, PO/SO, Phone, Email, Amount, Date
+  // -------------------------
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
     const sorted = [...invoices].sort((a, b) => {
@@ -54,7 +77,23 @@ export default function InvoiceList({ refresh }) {
     return sorted.filter((i) => {
       const id = String(i?.id ?? "").toLowerCase();
       const client = String(i?.client ?? "").toLowerCase();
-      return id.includes(query) || client.includes(query);
+      const gstNo = String(i?.gstNo ?? "").toLowerCase();
+      const po = String(i?.poSoNumber ?? "").toLowerCase();
+      const phone = String(i?.phone ?? "").toLowerCase();
+      const email = String(i?.email ?? "").toLowerCase();
+      const amount = String(i?.amount ?? "").toLowerCase();
+      const date = String(i?.date ?? "").toLowerCase();
+
+      return (
+        id.includes(query) ||
+        client.includes(query) ||
+        gstNo.includes(query) ||
+        po.includes(query) ||
+        phone.includes(query) ||
+        email.includes(query) ||
+        amount.includes(query) ||
+        date.includes(query)
+      );
     });
   }, [q, invoices]);
 
@@ -65,7 +104,6 @@ export default function InvoiceList({ refresh }) {
   };
 
   async function downloadJson(id) {
-    // direct download from function
     window.open(
       `/.netlify/functions/getInvoice?id=${encodeURIComponent(id)}`,
       "_blank"
@@ -73,30 +111,35 @@ export default function InvoiceList({ refresh }) {
   }
 
   async function downloadPdfFromJson(id) {
-    // ✅ Correct endpoint for JSON-only storage
     const res = await fetch(
       `/.netlify/functions/getInvoice?id=${encodeURIComponent(id)}`
     );
 
     if (!res.ok) throw new Error("Unable to fetch invoice JSON");
 
-    const invoice = await res.json(); // ✅ now it's JSON
-    const blob = generateInvoicePDF(invoice);
+    const invoice = await res.json();
+
+    // No images passed → PDF renders without images
+    const blob = generateInvoicePDF(invoice, { companyLogo, ownerSign });
 
     downloadBlob(blob, `invoice-${id}.pdf`);
   }
 
   return (
     <div className="invListWrap">
+
+      {/* Search + Refresh */}
       <div className="invListTop compact">
         <div className="searchBox compact">
           <span className="searchIcon" aria-hidden="true">🔎</span>
+
           <input
             className="searchInput"
-            placeholder="Search ID / Client..."
+            placeholder="Search ID / Buyer / GST / PO / Phone / Email / Amount / Date..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+
           {q && (
             <button
               className="clearBtn"
@@ -114,6 +157,7 @@ export default function InvoiceList({ refresh }) {
         </button>
       </div>
 
+      {/* Alerts */}
       {error && (
         <div className="invAlert" role="alert">
           <span className="invAlertDot" />
@@ -137,51 +181,54 @@ export default function InvoiceList({ refresh }) {
         </div>
       )}
 
-      
-    {!loading && filtered.length > 0 && (
-    <div className="tableCard compact scrollCard">
-        <div className="tableScroll">
-        <div className="tableHead compact stickyHead">
-            <span>Invoice</span>
-            <span>Client</span>
-            <span className="right">Items</span>
-            <span className="right">Amount</span>
-            <span className="right">Date</span>
-        </div>
+      {/* Table view */}
+      {!loading && filtered.length > 0 && (
+        <div className="tableCard compact scrollCard">
+          <div className="tableScroll">
 
-        <div className="tableBody">
-            {filtered.map((inv) => (
-            <div className="tableRow compact" key={inv.id}>
-                <div className="mono">
-                <span className="idPill">{inv.id}</span>
-                </div>
-
-                <div className="clientName ellipsis" title={inv.client}>
-                {inv.client}
-                </div>
-
-                <div className="right strong">{inv.itemsCount ?? "-"}</div>
-
-                <div className="right strong">{formatAmount(inv.amount)}</div>
-
-                <div className="muted right">{inv.date || "-"}</div>
-
-                <div className="actionsCell">
-                <button
-                    className="btn btnPrimary btnSmall"
-                    type="button"
-                    onClick={() => downloadPdfFromJson(inv.id)}
-                >
-                    PDF
-                </button>
-                </div>
+            <div className="tableHead compact stickyHead">
+              <span>Invoice</span>
+              <span>Buyer</span>
+              <span className="right">Items</span>
+              <span className="right">Amount</span>
+              <span className="right">Date</span>
             </div>
-            ))}
-        </div>
-        </div>
-    </div>
-    )}
 
+            <div className="tableBody">
+              {filtered.map((inv) => (
+                <div className="tableRow compact" key={inv.id}>
+                  
+                  <div className="mono">
+                    <span className="idPill">{inv.id}</span>
+                  </div>
+
+                  <div className="clientName ellipsis" title={inv.client}>
+                    {inv.client}
+                  </div>
+
+                  <div className="right strong">{inv.itemsCount ?? "-"}</div>
+
+                  <div className="right strong">{formatAmount(inv.amount)}</div>
+
+                  <div className="muted right">{inv.date || "-"}</div>
+
+                  <div className="actionsCell">
+                    <button
+                      className="btn btnPrimary btnSmall"
+                      type="button"
+                      onClick={() => downloadPdfFromJson(inv.id)}
+                    >
+                      PDF
+                    </button>
+                  </div>
+
+                </div>
+              ))}
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }

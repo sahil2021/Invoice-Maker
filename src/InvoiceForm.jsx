@@ -1,9 +1,29 @@
 
 import { useMemo, useState } from "react";
-import { generateInvoicePDF } from "./pdf"; // ✅ add this back
+import { generateInvoicePDF } from "./pdf";
 import "./InvoiceForm.css";
+import companyLogoUrl from "./assets/company_logo.jpg";
+import ownerSignUrl from "./assets/owner_sign.jpg";
 
-const EMPTY_ITEM = { description: "", quantity: 1, kg: 0, price: 0 };
+
+const EMPTY_ITEM = { description: "", hsnCode: "", quantity: 1, kg: 0, price: 0 };
+
+
+async function urlToDataURL(url) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result); // data URL
+    reader.readAsDataURL(blob);
+  });
+}
+
+const [companyLogo, ownerSign] = await Promise.all([
+  urlToDataURL(companyLogoUrl),
+  urlToDataURL(ownerSignUrl),
+]);
+
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -21,6 +41,10 @@ export default function InvoiceForm({ onSaved }) {
   const [error, setError] = useState("");
 
   const [items, setItems] = useState([{ ...EMPTY_ITEM }]);
+
+  // New global tax percentages (default 9%)
+  const [cgstPct, setCgstPct] = useState(9);
+  const [sgstPct, setSgstPct] = useState(9);
 
   const addItem = () => {
     setItems((prev) => [...prev, { ...EMPTY_ITEM }]);
@@ -44,6 +68,7 @@ export default function InvoiceForm({ onSaved }) {
     return items
       .map((it) => ({
         description: String(it.description || "").trim(),
+        hsnCode: String(it.hsnCode || "").trim(),
         quantity: Number(it.quantity) || 0,
         kg: Number(it.kg) || 0,
         price: Number(it.price) || 0
@@ -51,9 +76,14 @@ export default function InvoiceForm({ onSaved }) {
       .filter((it) => it.description && it.quantity > 0);
   }, [items]);
 
-  const grandTotal = useMemo(() => {
+  const subtotal = useMemo(() => {
     return cleanedItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
   }, [cleanedItems]);
+
+  const cgstAmount = useMemo(() => (subtotal * (Number(cgstPct) || 0)) / 100, [subtotal, cgstPct]);
+  const sgstAmount = useMemo(() => (subtotal * (Number(sgstPct) || 0)) / 100, [subtotal, sgstPct]);
+
+  const grandTotal = useMemo(() => subtotal + cgstAmount + sgstAmount, [subtotal, cgstAmount, sgstAmount]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -62,11 +92,20 @@ export default function InvoiceForm({ onSaved }) {
 
     const form = e.target;
     const id = form.id.value.trim();
-    const client = form.client.value.trim();
+    const client = form.client.value.trim(); // label shows Buyer Name
     const date = form.date.value;
 
+    // Optional fields
+    const buyerAddress = form.buyerAddress.value.trim();
+    const gstNo = form.gstNo.value.trim();
+    const phone = form.phone.value.trim();
+    const email = form.email.value.trim();
+    const website = form.website.value.trim();
+    const dueDate = form.dueDate.value;
+    const poSoNumber = form.poSoNumber.value.trim();
+
     if (!id || !client || !date) {
-      setError("Please fill Invoice ID, Client Name and Date.");
+      setError("Please fill Invoice ID, Buyer Name and Invoice Date.");
       setIsSaving(false);
       return;
     }
@@ -79,25 +118,40 @@ export default function InvoiceForm({ onSaved }) {
 
     const invoice = {
       id,
+      // Keep 'client' for backward compatibility with pdf.js
       client,
       date,
+      dueDate,
+      poSoNumber,
+      buyerAddress,
+      gstNo,
+      phone,
+      email,
+      website,
       items: cleanedItems,
-      amount: grandTotal.toFixed(2)
+      subtotal: Number(subtotal.toFixed(2)),
+      taxes: {
+        cgstPercent: Number(cgstPct),
+        sgstPercent: Number(sgstPct),
+        cgstAmount: Number(cgstAmount.toFixed(2)),
+        sgstAmount: Number(sgstAmount.toFixed(2))
+      },
+      amount: Number(grandTotal.toFixed(2)) // total payable
     };
 
-    // ✅ 1) Generate + download PDF FIRST (even if saving fails)
+    // ✅ 1) Generate + download PDF FIRST
     try {
-      const pdfBlob = generateInvoicePDF(invoice);
+      const pdfBlob = generateInvoicePDF(invoice, { companyLogo, ownerSign });
       const fileName = `invoice-${invoice.id || "new"}.pdf`;
       downloadBlob(pdfBlob, fileName);
     } catch (pdfErr) {
       console.error(pdfErr);
       setError("PDF generation failed. Please check pdf.js setup (jspdf-autotable).");
       setIsSaving(false);
-      return; // stop here because user requested PDF on submit
+      return;
     }
 
-    // ✅ 2) Then try saving JSON to Netlify (can fail; PDF already downloaded)
+    // ✅ 2) Save JSON to Netlify (PDF already downloaded)
     try {
       const res = await fetch("/.netlify/functions/saveInvoice", {
         method: "POST",
@@ -113,6 +167,8 @@ export default function InvoiceForm({ onSaved }) {
       onSaved?.();
       form.reset();
       setItems([{ ...EMPTY_ITEM }]);
+      setCgstPct(9);
+      setSgstPct(9);
     } catch (err) {
       console.error(err);
       setError("PDF downloaded ✅ but saving failed ❌. Please try again.");
@@ -154,7 +210,7 @@ export default function InvoiceForm({ onSaved }) {
         </div>
 
         <div className="field">
-          <label htmlFor="client">Client Name</label>
+          <label htmlFor="client">Buyer Name</label>
           <input
             id="client"
             name="client"
@@ -165,6 +221,70 @@ export default function InvoiceForm({ onSaved }) {
             disabled={isSaving}
           />
           <small className="hint">Customer / company being billed.</small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="buyerAddress">Buyer Address</label>
+          <textarea
+            id="buyerAddress"
+            name="buyerAddress"
+            className="input textarea"
+            rows={2}
+            placeholder="Street, City, State, PIN"
+            disabled={isSaving}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="gstNo">GSTIN/UIN</label>
+          <input
+            id="gstNo"
+            name="gstNo"
+            className="input"
+            placeholder="e.g. 27ABCDE1234F1Z5"
+            autoComplete="off"
+            disabled={isSaving}
+          />
+          <small className="hint">Buyer GSTIN if applicable.</small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="phone">Phone</label>
+          <input
+            id="phone"
+            name="phone"
+            className="input"
+            type="tel"
+            placeholder="e.g. +91 98765 43210"
+            autoComplete="tel"
+            disabled={isSaving}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="email">Email</label>
+          <input
+            id="email"
+            name="email"
+            className="input"
+            type="email"
+            placeholder="e.g. accounts@buyer.com"
+            autoComplete="email"
+            disabled={isSaving}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="website">Website</label>
+          <input
+            id="website"
+            name="website"
+            className="input"
+            type="url"
+            placeholder="e.g. https://buyer.com"
+            autoComplete="url"
+            disabled={isSaving}
+          />
         </div>
 
         <div className="field">
@@ -181,11 +301,83 @@ export default function InvoiceForm({ onSaved }) {
         </div>
 
         <div className="field">
-          <label>Grand Total</label>
-          <div className="totalBox">
-            <span className="totalValue">Rs. {grandTotal.toFixed(2)}</span>
-            <span className="totalHint">Auto-calculated from valid items</span>
+          <label htmlFor="dueDate">Payment Due Date</label>
+          <input
+            id="dueDate"
+            name="dueDate"
+            className="input"
+            type="date"
+            disabled={isSaving}
+          />
+          <small className="hint">When payment is due.</small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="poSoNumber">P.O./S.O. Number</label>
+          <input
+            id="poSoNumber"
+            name="poSoNumber"
+            className="input"
+            placeholder="e.g. PO-2025-0198"
+            autoComplete="off"
+            disabled={isSaving}
+          />
+          <small className="hint">Reference PO / SO number.</small>
+        </div>
+
+        {/* Taxes */}
+        <div className="field">
+          <label>CGST (%)</label>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            max="100"
+            step="0.1"
+            value={cgstPct}
+            onChange={(e) => setCgstPct(e.target.value)}
+            disabled={isSaving}
+          />
+          <small className="hint">Default 9%. Applies on subtotal.</small>
+        </div>
+
+        <div className="field">
+          <label>SGST (%)</label>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            max="100"
+            step="0.1"
+            value={sgstPct}
+            onChange={(e) => setSgstPct(e.target.value)}
+            disabled={isSaving}
+          />
+          <small className="hint">Default 9%. Applies on subtotal.</small>
+        </div>
+
+        {/* Totals (read-only breakdown) */}
+        <div className="field fieldFull">
+          <label>Totals</label>
+          <div className="totalBox totalStack">
+            <div className="totalLine">
+              <span>Subtotal&nbsp;&nbsp;</span>
+              <span className="totalValue">Rs. {subtotal.toFixed(2)}</span>
+            </div>
+            <div className="totalLine">
+              <span>CGST ({Number(cgstPct) || 0}%)&nbsp;&nbsp;</span>
+              <span className="totalValue">Rs. {cgstAmount.toFixed(2)}</span>
+            </div>
+            <div className="totalLine">
+              <span>SGST ({Number(sgstPct) || 0}%)&nbsp;&nbsp;</span>
+              <span className="totalValue">Rs. {sgstAmount.toFixed(2)}</span>
+            </div>
+            <div className="totalLine totalGrand">
+              <span>Total Payable&nbsp;&nbsp;</span>
+              <span className="totalValue">Rs. {grandTotal.toFixed(2)}</span>
+            </div>
           </div>
+          <small className="hint">Grand total includes CGST + SGST on entire subtotal.</small>
         </div>
       </div>
 
@@ -194,7 +386,7 @@ export default function InvoiceForm({ onSaved }) {
         <div className="itemsHeader">
           <div>
             <h4 className="itemsTitle">Line Items</h4>
-            <p className="itemsSub">Add description, quantity, kg and price.</p>
+            <p className="itemsSub">Add description (textarea), HSN Code, quantity, kg and price.</p>
           </div>
 
           <button
@@ -210,6 +402,7 @@ export default function InvoiceForm({ onSaved }) {
         <div className="itemsTable">
           <div className="itemsHead">
             <span>Description</span>
+            <span className="right">HSN Code</span>
             <span className="right">Qty</span>
             <span className="right">KG</span>
             <span className="right">Price</span>
@@ -224,11 +417,20 @@ export default function InvoiceForm({ onSaved }) {
 
             return (
               <div className="itemsRow" key={idx}>
-                <input
-                  className="input"
+                <textarea
+                  className="input textarea"
+                  rows={2}
                   placeholder="e.g. Transport Service"
                   value={it.description}
                   onChange={(e) => updateItem(idx, "description", e.target.value)}
+                  disabled={isSaving}
+                />
+
+                <input
+                  className="input"
+                  placeholder="e.g. 9965"
+                  value={it.hsnCode}
+                  onChange={(e) => updateItem(idx, "hsnCode", e.target.value)}
                   disabled={isSaving}
                 />
 
@@ -291,6 +493,8 @@ export default function InvoiceForm({ onSaved }) {
           onClick={() => {
             setError("");
             setItems([{ ...EMPTY_ITEM }]);
+            setCgstPct(9);
+            setSgstPct(9);
           }}
         >
           Clear
